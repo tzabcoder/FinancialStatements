@@ -320,10 +320,3 @@ class FinancialStatementParser:
             time.sleep(1)
 
         return historicalFilings
-
-
-# Example of usage TEST
-statementParser = FinancialStatementParser()
-tables = statementParser.Extract10KFinancialStatementTables('AAPL')
-
-print(tables)
