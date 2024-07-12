@@ -1,3 +1,4 @@
+# File Imports
 import time
 import re
 import warnings
@@ -21,7 +22,6 @@ class FinancialStatementParser:
         "CONSOLIDATED STATEMENTS OF OPERATIONS",
         "CONSOLIDATED BALANCE SHEETS",
         "CONSOLIDATED STATEMENTS OF COMPREHENSIVE INCOME",
-        "CONSOLIDATED STATEMENTS OF SHAREHOLDERS’ EQUITY",
         "CONSOLIDATED STATEMENTS OF CASH FLOWS",
     ]
 
@@ -43,8 +43,10 @@ class FinancialStatementParser:
 
     # List of number characters that can exist in the financial statement tables
     _NUMBER_CHARACTERS = [
-        '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', ',', '(', ')', '.', '-'
+        '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', ',', '(', ')', '.', '-', '—'
     ]
+
+    _ZERO_CHARACTER = '—'
 
     """
     * __init__(): private
@@ -113,47 +115,57 @@ class FinancialStatementParser:
     def _ParseNumberItem(self, number):
         t_num = number
 
-        # Handle positive integers
-        if (',' in number or ',' not in number) and \
-           ('(' not in number and ')' not in number and '-' not in number) and \
-            ('.' not in number):
+        # Do not process for singleton number chars
+        if number != '(' and number !=')' and number !='-':
+            # Process 0 character
+            if number == self._ZERO_CHARACTER:
+                t_num = 0
 
-            t_num = number.replace(",", "")
+            else:
+                # Handle positive integers
+                if (',' in number or ',' not in number) and \
+                ('(' not in number and ')' not in number and '-' not in number) and \
+                    ('.' not in number):
 
-            t_num = int(t_num)
+                    t_num = number.replace(",", "")
 
-        # Handle negative integers
-        if (',' in number or ',' not in number) and \
-           (('(' in number and ')' in number) or ('-' in number)) and \
-           ('.' not in number):
+                    t_num = int(t_num)
 
-           t_num = number.replace(",", "")
-           t_num = t_num.replace("(", "")
-           t_num = t_num.replace(")", "")
-           t_num = t_num.replace("-", "")
+                # Handle negative integers
+                if (',' in number or ',' not in number) and \
+                (('(' in number or ')' in number) or ('-' in number)) and \
+                ('.' not in number):
 
-           t_num = int(t_num) * -1
+                    t_num = number.replace(",", "")
+                    t_num = t_num.replace("(", "")
+                    t_num = t_num.replace(")", "")
+                    t_num = t_num.replace("-", "")
 
-        # Handle positive decimals
-        if (',' in number or ',' not in number) and \
-           ('(' not in number and ')' not in number and '-' not in number) and \
-           ('.' in number):
+                    t_num = int(t_num) * -1
 
-            t_num = number.replace(",", "")
+                # Handle positive decimals
+                if (',' in number or ',' not in number) and \
+                ('(' not in number and ')' not in number and '-' not in number) and \
+                ('.' in number):
 
-            t_num = float(t_num)
+                    t_num = number.replace(",", "")
 
-        # Handle negative decimals
-        if (',' in number or ',' not in number) and \
-           (('(' in number and ')' in number) or ('-' in number)) and \
-           ('.' in number):
+                    t_num = float(t_num)
 
-           t_num = number.replace(",", "")
-           t_num = t_num.replace("(", "")
-           t_num = t_num.replace(")", "")
-           t_num = t_num.replace("-", "")
+                # Handle negative decimals
+                if (',' in number or ',' not in number) and \
+                (('(' in number and ')' in number) or ('-' in number)) and \
+                ('.' in number):
 
-           t_num = float(t_num) * -1
+                    t_num = number.replace(",", "")
+                    t_num = t_num.replace("(", "")
+                    t_num = t_num.replace(")", "")
+                    t_num = t_num.replace("-", "")
+
+                    t_num = float(t_num) * -1
+
+        else:
+            t_num = ""
 
         return t_num
 
@@ -181,7 +193,10 @@ class FinancialStatementParser:
 
                 # Process number items
                 elif self._HasNumberCharacters(item):
-                    t_row.append(self._ParseNumberItem(item))
+                    t_num = self._ParseNumberItem(item)
+
+                    if t_num != '':
+                        t_row.append(t_num)
 
                 # Process string items
                 else:
@@ -210,6 +225,8 @@ class FinancialStatementParser:
                 t = [cell.get_text(strip=True) for cell in row.find_all("td")] # extract the table row
                 t = self._ProcessRow(t)                                        # process/format the table row
 
+                print(t)
+
                 # Omit empty table rows
                 if len(t) != 0:
                     table.append(t)
@@ -218,25 +235,32 @@ class FinancialStatementParser:
         financials_df = pd.DataFrame(table)
         colLen = len(financials_df.columns)
 
-        # Rename the colukmns to temporary values
-        colNames = []
-        colName = 'col_'
-        for i in range(colLen):
-            if i > 0:
-                c_name = colName + str(i)
-                colNames.append(c_name)
-            else:
-                colNames.append('Category')
+        if not financials_df.empty:
+            # Rename the columns to temporary values
+            colNames = []
+            colName = 'col_'
+            for i in range(colLen):
+                if i > 0:
+                    c_name = colName + str(i)
+                    colNames.append(c_name)
+                else:
+                    colNames.append('Category')
 
-        financials_df.columns = colNames
-        financials_df.set_index(colNames[0], inplace=True)
+            financials_df.columns = colNames
+            financials_df.set_index(colNames[0], inplace=True)
 
-        # Rename the columns to the date values
-        dates = financials_df.loc['Date']
-        colDates = [date for date in dates]
+            # Rename the columns to the date values
+            dates = financials_df.loc['Date']
+            colDates = [date for date in dates]
 
-        financials_df.columns = colDates
-        financials_df.drop('Date', axis=0, inplace=True)
+            financials_df.columns = colDates
+            financials_df.drop('Date', axis=0, inplace=True)
+
+        else:
+            financials_df = None
+
+        print(financials_df)
+        print('\n\n\n\n\n')
 
         return financials_df
 
