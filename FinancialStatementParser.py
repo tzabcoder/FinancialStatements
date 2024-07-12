@@ -1,5 +1,6 @@
 # File Imports
 import time
+import pickle
 import re
 import warnings
 import pandas as pd
@@ -48,6 +49,8 @@ class FinancialStatementParser:
 
     _ZERO_CHARACTER = '—'
 
+    _DATABASE_DIR = "FS_DataBase\\"
+
     """
     * __init__(): private
     *
@@ -56,12 +59,15 @@ class FinancialStatementParser:
     * If the input CIK request parameter is true, then the reader interface will be
     * created with the true flag.
     *
-    * @param[in] request_cik(boolean) - true to request all CIKs listed by the SEC,
-    *                                   false otherwise.
+    * @param[in] request_cik(boolean)    - true to request all CIKs listed by the SEC,
+    *                                      false otherwise.
+    * @param[in] write_database(boolean) - true to write financials to DB, false otherwise
     """
-    def __init__(self, request_cik=False):
+    def __init__(self, request_cik=False, write_database=False):
         # Create the statement reader
         self._financialStatementReader = fsr.FinancialStatementReader(request_cik)
+
+        self._write_database = write_database
 
     """
     * _HasMonth(): private
@@ -170,6 +176,54 @@ class FinancialStatementParser:
         return t_num
 
     """
+    * _WriteFinancialsToDatabase(): private
+    *
+    * Writes the financial data to the database.
+    * The filename formatting follows:
+    *       'ticker_name'_financials.pickle
+    *
+    * @param[in] ticker(str) - ticker associated with the financials
+    * @param[in] financials(dict) - financials to write to the DB
+    * @returns true if written, false otherwise
+    """
+    def _WriteFinancialsToDatabase(self, ticker, financials):
+        status = True
+
+        try:
+            filename = self._DATABASE_DIR + f"{ticker}_financials.pickle"
+
+            with open(filename, 'wb') as file:
+                pickle.dump(financials, file)
+
+        except Exception as e:
+            print(f'Could not write finanical data to the database...:\n{e}')
+            status = False
+
+        return status
+
+    """
+    * _ReadFinancialsFromDatabase(): private
+    *
+    * Reads the financials from the databas , if available.
+    *
+    * @param[in] ticker(str) - ticker associated with the financials
+    * @returns dict of financials, None if read error
+    """
+    def _ReadFinancialsFromDatabase(self, ticker):
+        data = None
+
+        try:
+            filename = self._DATABASE_DIR + f"{ticker}_financials.pickle"
+
+            with open(filename, 'rb') as file:
+                data = pickle.load(file)
+
+        except Exception as e:
+            print(f'Could not read finanical data from the database...:\n{e}')
+
+        return data
+
+    """
     * _ProcessRow(): private
     *
     * Format a given row(list) that was extracted from the raw SEC filing.
@@ -225,8 +279,6 @@ class FinancialStatementParser:
                 t = [cell.get_text(strip=True) for cell in row.find_all("td")] # extract the table row
                 t = self._ProcessRow(t)                                        # process/format the table row
 
-                print(t)
-
                 # Omit empty table rows
                 if len(t) != 0:
                     table.append(t)
@@ -258,9 +310,6 @@ class FinancialStatementParser:
 
         else:
             financials_df = None
-
-        print(financials_df)
-        print('\n\n\n\n\n')
 
         return financials_df
 
@@ -319,4 +368,19 @@ class FinancialStatementParser:
 
             time.sleep(1)
 
+        if self._write_database:
+            self._WriteFinancialsToDatabase(ticker, historicalFilings)
+
         return historicalFilings
+
+    """
+    * Read10KFinancials(): public
+    *
+    * Interface for reading the 10-K financial data located in the database,
+    * if the data exists.
+    *
+    * @param[in] ticker(str) - ticker to indicate what data to read
+    * @return dict of financials if read, None otherwise
+    """
+    def Read10KFinancials(self, ticker):
+        return self._ReadFinancialsFromDatabase(ticker)
